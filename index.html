@@ -1,51 +1,122 @@
 <!DOCTYPE html>
-<html>
-<head><title>Vidrock</title></head>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VidRock Stream Resolver</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0f0f13; color: #e0e0e0; font-family: 'Segoe UI', sans-serif; min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 40px 16px; }
+  h1 { font-size: 1.6rem; margin-bottom: 24px; color: #fff; }
+  .card { background: #1a1a24; border: 1px solid #2a2a3a; border-radius: 12px; padding: 24px; width: 100%; max-width: 520px; }
+  .row { display: flex; gap: 10px; margin-bottom: 12px; }
+  input, select { background: #0f0f13; border: 1px solid #333; border-radius: 8px; color: #fff; padding: 10px 12px; font-size: 0.95rem; width: 100%; outline: none; }
+  input:focus, select:focus { border-color: #6c63ff; }
+  .tv-fields { display: none; gap: 10px; margin-bottom: 12px; }
+  .tv-fields.visible { display: flex; }
+  button { width: 100%; padding: 11px; background: #6c63ff; border: none; border-radius: 8px; color: #fff; font-size: 1rem; cursor: pointer; transition: background 0.2s; }
+  button:hover { background: #574fd6; }
+  button:disabled { background: #444; cursor: not-allowed; }
+  .results { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
+  .stream-item { background: #0f0f13; border: 1px solid #2a2a3a; border-radius: 8px; padding: 14px; }
+  .stream-name { font-size: 0.78rem; color: #6c63ff; font-weight: 600; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .stream-url { font-size: 0.82rem; color: #aaa; word-break: break-all; }
+  .copy-btn { margin-top: 8px; padding: 5px 12px; font-size: 0.78rem; background: #2a2a3a; border: none; border-radius: 5px; color: #ccc; cursor: pointer; }
+  .copy-btn:hover { background: #3a3a4a; color: #fff; }
+  .status { text-align: center; font-size: 0.88rem; color: #888; margin-top: 12px; }
+  .error { color: #ff6b6b; }
+</style>
+</head>
 <body>
-<input id="tmdb" placeholder="TMDB ID" value="99861">
-<select id="type"><option value="movie">Movie</option><option value="tv">TV</option></select>
-<input id="season" placeholder="Season" style="width:60px">
-<input id="episode" placeholder="Episode" style="width:60px">
-<button onclick="getStreams()">Get Streams</button>
-<pre id="out"></pre>
+<h1>🎬 VidRock Resolver</h1>
+<div class="card">
+  <div class="row">
+    <input id="tmdb" placeholder="TMDB ID (e.g. 280)" value="280">
+    <select id="type" onchange="toggleTV()" style="width:120px;flex-shrink:0">
+      <option value="movie">Movie</option>
+      <option value="tv">TV</option>
+    </select>
+  </div>
+  <div class="tv-fields" id="tvFields">
+    <input id="season" placeholder="Season" type="number" min="1" value="1">
+    <input id="episode" placeholder="Episode" type="number" min="1" value="1">
+  </div>
+  <button id="btn" onclick="resolve()">Resolve Streams</button>
+  <div class="status" id="status"></div>
+  <div class="results" id="results"></div>
+</div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
 <script>
-const KEY = CryptoJS.enc.Utf8.parse("x7k9mPqT2rWvY8zA5bC3nF6hJ2lK4mN9");
-const IV  = CryptoJS.enc.Utf8.parse("x7k9mPqT2rWvY8zA");
-const WORKER = "https://vidrock.narutoanimeinspirationquote.workers.dev";
-
-function makeToken(tmdbId, type, season, episode) {
-  const plain = type === "tv" ? `${tmdbId}_${season}_${episode}` : String(tmdbId);
-  const enc = CryptoJS.AES.encrypt(plain, KEY, { iv: IV, mode: CryptoJS.mode.CBC, padding: CryptoJS.pad.Pkcs7 });
-  return enc.ciphertext.toString(CryptoJS.enc.Base64)
-    .replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+function toggleTV() {
+  const isTV = document.getElementById('type').value === 'tv';
+  document.getElementById('tvFields').classList.toggle('visible', isTV);
 }
 
-async function getStreams() {
-  const tmdb    = document.getElementById("tmdb").value.trim();
-  const type    = document.getElementById("type").value;
-  const season  = document.getElementById("season").value || 1;
-  const episode = document.getElementById("episode").value || 1;
-  const out     = document.getElementById("out");
+async function aesEncrypt(plain) {
+  const keyStr = "x7k9mPqT2rWvY8zA5bC3nF6hJ2lK4mN9";
+  const keyBytes = new TextEncoder().encode(keyStr);
+  const iv = keyBytes.slice(0, 16);
 
-  const token    = makeToken(tmdb, type, season, episode);
-  const apiUrl   = `https://vidrock.ru/api/${type}/${token}`;
-  const embedUrl = `https://vidrock.ru/embed/${type}/${tmdb}`;
+  // PKCS7 pad
+  const plainBytes = new TextEncoder().encode(plain);
+  const padLen = 16 - (plainBytes.length % 16);
+  const padded = new Uint8Array(plainBytes.length + padLen);
+  padded.set(plainBytes);
+  padded.fill(padLen, plainBytes.length);
 
-  out.textContent = "Fetching...";
+  const key = await crypto.subtle.importKey("raw", keyBytes, { name: "AES-CBC" }, false, ["encrypt"]);
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-CBC", iv }, key, padded);
+  return btoa(String.fromCharCode(...new Uint8Array(encrypted)))
+    .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function resolve() {
+  const tmdbId = document.getElementById('tmdb').value.trim();
+  const mediaType = document.getElementById('type').value;
+  const season = document.getElementById('season').value;
+  const episode = document.getElementById('episode').value;
+  const status = document.getElementById('status');
+  const results = document.getElementById('results');
+  const btn = document.getElementById('btn');
+
+  if (!tmdbId) { status.textContent = "Enter a TMDB ID"; return; }
+
+  btn.disabled = true;
+  status.textContent = "Resolving...";
+  results.innerHTML = "";
 
   try {
-    const r = await fetch(`${WORKER}?url=${encodeURIComponent(apiUrl)}&ref=${encodeURIComponent(embedUrl)}`);
-    const data = await r.json();
-    const lines = [];
-    for (const [name, info] of Object.entries(data)) {
-      if (info?.url) lines.push(`${name}: ${info.url}`);
+    const plain = mediaType === "tv" ? `${tmdbId}_${season}_${episode}` : tmdbId;
+    const token = await aesEncrypt(plain);
+    const url = `https://vidrock.ru/api/${mediaType}/${token}`;
+
+    const res = await fetch(url, {
+      headers: {
+        "Referer": `https://vidrock.ru/embed/${mediaType}/${tmdbId}`,
+        "User-Agent": "Mozilla/5.0"
+      }
+    });
+
+    const data = await res.json();
+    const streams = Object.entries(data).filter(([, v]) => v?.url);
+
+    if (!streams.length) {
+      status.innerHTML = '<span class="error">No streams found.</span>';
+    } else {
+      status.textContent = `Found ${streams.length} stream(s)`;
+      results.innerHTML = streams.map(([name, info]) => `
+        <div class="stream-item">
+          <div class="stream-name">${name}</div>
+          <div class="stream-url">${info.url}</div>
+          <button class="copy-btn" onclick="navigator.clipboard.writeText('${info.url}').then(()=>this.textContent='Copied!').catch(()=>{})">Copy URL</button>
+        </div>
+      `).join("");
     }
-    out.textContent = lines.join("\n") || "No streams found";
-  } catch(e) {
-    out.textContent = "Error: " + e.message;
+  } catch (e) {
+    status.innerHTML = `<span class="error">Error: ${e.message}</span>`;
   }
+
+  btn.disabled = false;
 }
 </script>
 </body>
