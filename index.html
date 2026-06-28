@@ -13,9 +13,7 @@
 <script>
 const KEY = CryptoJS.enc.Utf8.parse("x7k9mPqT2rWvY8zA5bC3nF6hJ2lK4mN9");
 const IV  = CryptoJS.enc.Utf8.parse("x7k9mPqT2rWvY8zA");
-
-// PUT YOUR WORKER URL HERE
-const WORKER = "https://vidrock.narutoanimeinspirationquote.workers.dev/";
+const WORKER = "https://vidrock.narutoanimeinspirationquote.workers.dev";
 
 function makeToken(tmdbId, type, season, episode) {
   const plain = type === "tv" ? `${tmdbId}_${season}_${episode}` : String(tmdbId);
